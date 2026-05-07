@@ -34,7 +34,7 @@ def conectar_bd_gastos():
 def subir_a_drive(archivo_subido, nombre_archivo):
     """Sube un archivo a Drive usando nuestro puente de Google Apps Script."""
     
-    URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbwxI1qYTuey0cQ5sbtyEYpy4gO4wtKONivKngCaVGsKwp4ad2g_fIzgb-yHt5cXWYYr3Q/exec"
+    URL_APPS_SCRIPT = "https://script.google.com/macros/library/d/1pZqKpxPpJ3dBA9-75lMkZ4LQKf2Nk0Z09BvIIlWkNGqGhEj5aGcKhYxq/1"
     
     b64_data = base64.b64encode(archivo_subido.getvalue()).decode('utf-8')
     
@@ -45,6 +45,11 @@ def subir_a_drive(archivo_subido, nombre_archivo):
     }
     
     respuesta = requests.post(URL_APPS_SCRIPT, data=payload)
+    
+    # Evitar que se guarde una página web de error si fallan los permisos de Google
+    if "<!DOCTYPE html>" in respuesta.text[:50].lower() or "access denied" in respuesta.text.lower():
+        raise Exception("Google Apps Script bloqueó el acceso. Debes configurarlo para que 'Cualquier persona' tenga acceso.")
+        
     return respuesta.text
 
 # Configuración principal de la interfaz web
@@ -165,7 +170,18 @@ with tab_finanzas:
 
                 st.divider()
                 st.subheader("Desglose Histórico")
-                st.dataframe(df.drop(columns=['_fila_gs'], errors='ignore'), use_container_width=True)
+                
+                # Limpiamos la tabla para mostrar y configuramos la columna de enlaces
+                df_mostrar = df.drop(columns=['_fila_gs'], errors='ignore')
+                col_enlace = df_mostrar.columns[-1]  # La columna del archivo suele ser la última
+                
+                st.dataframe(
+                    df_mostrar, 
+                    use_container_width=True,
+                    column_config={
+                        col_enlace: st.column_config.LinkColumn("Comprobante", display_text="🔗 Ver Boleta")
+                    }
+                )
             else:
                 st.info("No existen registros procesables en la hoja de cálculo.")
         except Exception as e:
