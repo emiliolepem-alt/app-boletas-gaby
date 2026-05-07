@@ -9,6 +9,7 @@ import json
 # Configuración de alcance para acceso a APIs de Google
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
 
+@st.cache_resource(ttl=3600)
 def conectar_bd_gastos():
     """
     Establece conexión con la hoja de cálculo de gastos médicos.
@@ -37,7 +38,7 @@ with tab_registro:
         with col1:
             fecha = st.date_input("Fecha de emisión", datetime.now())
             concepto = st.text_input("Concepto (Ej: Nebivolol, Consulta)")
-            monto = st.number_input("Monto Total ($)", min_value=0, step=1000)
+            monto = st.number_input("Monto Total ($)", min_value=0.0, step=1000.0)
             
         with col2:
             estado = st.selectbox("Estado del trámite", ["Pendiente", "Reembolsado"])
@@ -48,22 +49,25 @@ with tab_registro:
         enviado = st.form_submit_button("Registrar Transacción")
         
         if enviado:
-            try:
-                hoja = conectar_bd_gastos()
-                url_archivo = "Pendiente de integración API Drive" 
-                
-                datos = [
-                    fecha.strftime("%d/%m/%Y"),
-                    concepto,
-                    monto,
-                    estado,
-                    comentario,
-                    url_archivo
-                ]
-                hoja.append_row(datos)
-                st.success("Transacción registrada correctamente en la base de datos.")
-            except Exception as e:
-                st.error(f"Fallo de escritura en base de datos: {e}")
+            if not concepto.strip() or monto <= 0:
+                st.error("Por favor, ingresa un concepto válido y un monto mayor a 0.")
+            else:
+                try:
+                    hoja = conectar_bd_gastos()
+                    url_archivo = "Pendiente de integración API Drive" 
+                    
+                    datos = [
+                        fecha.strftime("%d/%m/%Y"),
+                        concepto,
+                        monto,
+                        estado,
+                        comentario,
+                        url_archivo
+                    ]
+                    hoja.append_row(datos)
+                    st.success("Transacción registrada correctamente en la base de datos.")
+                except Exception as e:
+                    st.error(f"Fallo de escritura en base de datos: {e}")
 
 with tab_finanzas:
     st.header("Panel Financiero")
