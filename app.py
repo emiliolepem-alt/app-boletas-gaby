@@ -5,9 +5,8 @@ from datetime import datetime
 import os
 import pandas as pd
 import json
-import io
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseUpload
+import base64
+import requests
 
 # Configuración de alcance para acceso a APIs de Google
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
@@ -33,27 +32,20 @@ def conectar_bd_gastos():
     return cliente.open("Gastos_Medicos").sheet1
 
 def subir_a_drive(archivo_subido, nombre_archivo):
-    """Sube un archivo a Google Drive y retorna el enlace público."""
-    credenciales = obtener_credenciales()
-    servicio = build('drive', 'v3', credentials=credenciales)
+    """Sube un archivo a Drive usando nuestro puente de Google Apps Script."""
     
-    # ¡IMPORTANTE! Reemplaza esto con el ID de tu carpeta de Drive
-    CARPETA_ID = "1sfzkDSuwoPUqW02Tx3Ipu3jGj05nM7Bh"
+    URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbwxI1qYTuey0cQ5sbtyEYpy4gO4wtKONivKngCaVGsKwp4ad2g_fIzgb-yHt5cXWYYr3Q/exec"
     
-    file_metadata = {'name': nombre_archivo, 'parents': [CARPETA_ID]}
-    media = MediaIoBaseUpload(io.BytesIO(archivo_subido.getvalue()), 
-                              mimetype=archivo_subido.type,
-                              resumable=True)
+    b64_data = base64.b64encode(archivo_subido.getvalue()).decode('utf-8')
     
-    archivo = servicio.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+    payload = {
+        "data": b64_data,
+        "mimetype": archivo_subido.type,
+        "filename": nombre_archivo
+    }
     
-    # Dar permisos de lectura general para que cualquiera con el enlace (tú o Gaby) pueda ver la boleta
-    servicio.permissions().create(
-        fileId=archivo.get('id'),
-        body={'type': 'anyone', 'role': 'reader'}
-    ).execute()
-    
-    return archivo.get('webViewLink')
+    respuesta = requests.post(URL_APPS_SCRIPT, data=payload)
+    return respuesta.text
 
 # Configuración principal de la interfaz web
 st.set_page_config(page_title="Control de Gastos Médicos", layout="wide")
