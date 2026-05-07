@@ -41,7 +41,6 @@ with tab_registro:
             monto = st.number_input("Monto Total ($)", min_value=0.0, step=1000.0)
             
         with col2:
-            estado = st.selectbox("Estado del trámite", ["Pendiente", "Reembolsado"])
             comentario = st.text_area("Notas adicionales")
             # El componente UI está presente, requiere integración de backend para procesar el archivo físico
             boleta = st.file_uploader("Adjuntar Boleta/Factura", type=['png', 'jpg', 'pdf'])
@@ -60,7 +59,7 @@ with tab_registro:
                         fecha.strftime("%d/%m/%Y"),
                         concepto,
                         monto,
-                        estado,
+                        "Pendiente",
                         comentario,
                         url_archivo
                     ]
@@ -72,16 +71,22 @@ with tab_registro:
 with tab_finanzas:
     st.header("Panel Financiero")
     
-    if st.button("Actualizar Métricas"):
+    if st.button("Cargar / Actualizar Datos"):
+        hoja = conectar_bd_gastos()
+        st.session_state['registros_finanzas'] = hoja.get_all_records()
+        
+    if 'registros_finanzas' in st.session_state:
         try:
             hoja = conectar_bd_gastos()
-            registros = hoja.get_all_records()
+            registros = st.session_state['registros_finanzas']
             
             if registros:
                 df = pd.DataFrame(registros)
                 
                 # Transformación de tipos de datos para permitir operaciones aritméticas
                 df['Monto'] = pd.to_numeric(df['Monto'], errors='coerce').fillna(0)
+                # Guardamos la fila original de la hoja de cálculo (Para poder editarla luego)
+                df['_fila_gs'] = df.index + 2
                 
                 # Cálculo de indicadores clave de rendimiento (KPIs)
                 total_gastado = df['Monto'].sum()
@@ -94,8 +99,46 @@ with tab_finanzas:
                 col_k3.metric("Capital Recuperado", f"${total_reembolsado:,.0f}")
                 
                 st.divider()
+                st.subheader("Gestión de Reembolsos Pendientes")
+                
+                df_pendientes = df[df['Estado'] == 'Pendiente'].copy()
+                
+                if not df_pendientes.empty:
+                    df_pendientes.insert(0, 'Marcar Pagado', False)
+                    
+                    df_editado = st.data_editor(
+                        df_pendientes,
+                        column_config={
+                            "Marcar Pagado": st.column_config.CheckboxColumn("¿Pagado?", default=False),
+                            "_fila_gs": None, # Ocultamos esta columna técnica
+                        },
+                        disabled=df.columns.tolist(), # Evitar que editen los otros textos aquí
+                        use_container_width=True,
+                        hide_index=True,
+                        key="editor_reembolsos"
+                    )
+                    
+                    if st.button("Guardar Cambios y Restar Deuda"):
+                        filas_pagadas = df_editado[df_editado['Marcar Pagado'] == True]['_fila_gs'].tolist()
+                        if filas_pagadas:
+                            # Ubicamos el número de columna 'Estado' automáticamente
+                            idx_col_estado = df.columns.get_loc('Estado') + 1
+                            
+                            for fila in filas_pagadas:
+                                hoja.update_cell(fila, idx_col_estado, "Reembolsado")
+                                
+                            st.success(f"Se actualizaron {len(filas_pagadas)} boletas. ¡Deuda restada!")
+                            # Recargar datos frescos de Google para actualizar los números
+                            st.session_state['registros_finanzas'] = hoja.get_all_records()
+                            st.rerun()
+                        else:
+                            st.warning("Ponle un tick a al menos una boleta para marcarla como pagada.")
+                else:
+                    st.info("No tienes boletas pendientes por cobrar. ¡Todo está al día!")
+
+                st.divider()
                 st.subheader("Desglose Histórico")
-                st.dataframe(df, use_container_width=True)
+                st.dataframe(df.drop(columns=['_fila_gs'], errors='ignore'), use_container_width=True)
             else:
                 st.info("No existen registros procesables en la hoja de cálculo.")
         except Exception as e:
