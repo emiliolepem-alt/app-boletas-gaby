@@ -34,7 +34,10 @@ def conectar_bd_gastos():
 def subir_a_drive(archivo_subido, nombre_archivo):
     """Sube un archivo a Drive usando nuestro puente de Google Apps Script."""
     
-    URL_APPS_SCRIPT = "https://script.google.com/macros/library/d/1pZqKpxPpJ3dBA9-75lMkZ4LQKf2Nk0Z09BvIIlWkNGqGhEj5aGcKhYxq/1"
+    URL_APPS_SCRIPT = "https://script.google.com/macros/s/AKfycbwxI1qYTuey0cQ5sbtyEYpy4gO4wtKONivKngCaVGsKwp4ad2g_fIzgb-yHt5cXWYYr3Q/exec"
+    
+    if "/library/" in URL_APPS_SCRIPT or not URL_APPS_SCRIPT.strip().endswith("/exec"):
+        raise Exception("⚠️ Error de configuración: El enlace de Apps Script es inválido. Asegúrate de copiar la URL de la 'Aplicación Web' que termina en '/exec'.")
     
     b64_data = base64.b64encode(archivo_subido.getvalue()).decode('utf-8')
     
