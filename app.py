@@ -5,9 +5,22 @@ from datetime import datetime
 import os
 import pandas as pd
 import json
+import io
+from googleapiclient.discovery import build
+from googleapiclient.http import MediaIoBaseUpload
 
 # Configuración de alcance para acceso a APIs de Google
 SCOPES = ["https://www.googleapis.com/auth/spreadsheets", "https://www.googleapis.com/auth/drive"]
+
+@st.cache_resource(ttl=3600)
+def obtener_credenciales():
+    """Obtiene y cachea las credenciales de Google."""
+    if "GCP_CREDENTIALS" in st.secrets:
+        creds_dict = json.loads(st.secrets["GCP_CREDENTIALS"])
+        return Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
+    else:
+        ruta_credenciales = os.path.join(os.path.dirname(__file__), "credenciales.json")
+        return Credentials.from_service_account_file(ruta_credenciales, scopes=SCOPES)
 
 @st.cache_resource(ttl=3600)
 def conectar_bd_gastos():
@@ -15,15 +28,32 @@ def conectar_bd_gastos():
     Establece conexión con la hoja de cálculo de gastos médicos.
     Soporta entornos locales mediante archivo físico y despliegues mediante variables de entorno.
     """
-    if "GCP_CREDENTIALS" in st.secrets:
-        creds_dict = json.loads(st.secrets["GCP_CREDENTIALS"])
-        credenciales = Credentials.from_service_account_info(creds_dict, scopes=SCOPES)
-    else:
-        ruta_credenciales = os.path.join(os.path.dirname(__file__), "credenciales.json")
-        credenciales = Credentials.from_service_account_file(ruta_credenciales, scopes=SCOPES)
-        
+    credenciales = obtener_credenciales()
     cliente = gspread.authorize(credenciales)
     return cliente.open("Gastos_Medicos").sheet1
+
+def subir_a_drive(archivo_subido, nombre_archivo):
+    """Sube un archivo a Google Drive y retorna el enlace público."""
+    credenciales = obtener_credenciales()
+    servicio = build('drive', 'v3', credentials=credenciales)
+    
+    # ¡IMPORTANTE! Reemplaza esto con el ID de tu carpeta de Drive
+    CARPETA_ID = "1sfzkDSuwoPUqW02Tx3Ipu3jGj05nM7Bh"
+    
+    file_metadata = {'name': nombre_archivo, 'parents': [CARPETA_ID]}
+    media = MediaIoBaseUpload(io.BytesIO(archivo_subido.getvalue()), 
+                              mimetype=archivo_subido.type,
+                              resumable=True)
+    
+    archivo = servicio.files().create(body=file_metadata, media_body=media, fields='id, webViewLink').execute()
+    
+    # Dar permisos de lectura general para que cualquiera con el enlace (tú o Gaby) pueda ver la boleta
+    servicio.permissions().create(
+        fileId=archivo.get('id'),
+        body={'type': 'anyone', 'role': 'reader'}
+    ).execute()
+    
+    return archivo.get('webViewLink')
 
 # Configuración principal de la interfaz web
 st.set_page_config(page_title="Control de Gastos Médicos", layout="wide")
@@ -52,9 +82,14 @@ with tab_registro:
                 st.error("Por favor, ingresa un concepto válido y un monto mayor a 0.")
             else:
                 try:
+                    url_archivo = "Sin comprobante"
+                    if boleta is not None:
+                        with st.spinner("Subiendo boleta a Google Drive... ☁️"):
+                            # Formatea el nombre para que se vea ordenado en Drive: 20240502_Consulta.jpg
+                            nombre_formateado = f"{fecha.strftime('%Y%m%d')}_{concepto}.{boleta.name.split('.')[-1]}"
+                            url_archivo = subir_a_drive(boleta, nombre_formateado)
+
                     hoja = conectar_bd_gastos()
-                    url_archivo = "Pendiente de integración API Drive" 
-                    
                     datos = [
                         fecha.strftime("%d/%m/%Y"),
                         concepto,
